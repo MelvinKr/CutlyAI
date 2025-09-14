@@ -1,8 +1,6 @@
-import ProductsClient from "./ProductsClient"
-import { createSupabaseServer } from "@/lib/supabase-server"
-import { archiveProduct, createProduct, updateProduct, importProductsCsv } from "./actions"
-import ImportCsvClient from "./ImportCsvClient"
 import { ensureDemoSeed } from "@/lib/demo-seed"
+import TenantProductsTable from "@/components/products/TenantProductsTable"
+import { searchProductsAction, updateProductAction, deleteProductAction } from "./actions"
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.SUPABASE_URL
 const supabaseAnon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? process.env.SUPABASE_ANON_KEY
@@ -22,74 +20,45 @@ export default async function ProductsPage({ params, searchParams }: { params: {
     )
   }
   await ensureDemoSeed(tenantId)
-  const supabase = await createSupabaseServer()
   const page = Number(searchParams?.page ?? 1) || 1
-  const pageSize = Math.min(200, Number(searchParams?.pageSize ?? 50) || 50)
+  const pageSize = Math.min(200, Number(searchParams?.pageSize ?? 20) || 20)
   const q = typeof searchParams?.q === 'string' ? searchParams.q : undefined
+  const cat = typeof searchParams?.cat === 'string' ? searchParams.cat : undefined
+  const under = String(searchParams?.under || '') === 'true'
+  const exp30 = String(searchParams?.exp30 || '') === 'true'
 
-  let query = supabase
-    .from("products")
-    .select("id, tenant_id, name, sku, brand, category, retail_price, is_active, notes, min_stock_threshold", { count: 'exact' })
-    .eq("tenant_id", tenantId)
-  if (q && q.trim()) {
-    const like = `%${q.trim()}%`
-    query = query.or(`sku.ilike.${like},name.ilike.${like},brand.ilike.${like}`)
+  const { rows, total } = await searchProductsAction(tenantId, { q, cat, under, exp30, page, pageSize })
+
+  async function updateRow(formData: FormData) {
+    'use server'
+    const id = String(formData.get('id') || '')
+    return await updateProductAction(tenantId, id, formData)
   }
-  query = query.order("name", { ascending: true })
-  const from = (page - 1) * pageSize
-  const to = from + pageSize - 1
-  const { data: products, count } = await query.range(from, to)
 
-  const ids = (products || []).map(p => p.id)
-  let totals: Record<string, number> = {}
-  let expiring: Record<string, number> = {}
-  if (ids.length) {
-    const { data: batches } = await supabase
-      .from("product_batches")
-      .select("product_id, qty_on_hand, exp_date")
-      .eq("tenant_id", tenantId)
-      .in("product_id", ids)
-    const in30 = Date.now() + 30 * 24 * 3600 * 1000
-    for (const b of batches || []) {
-      totals[b.product_id] = (totals[b.product_id] || 0) + (b.qty_on_hand ?? 0)
-      if (b.exp_date && new Date(b.exp_date).getTime() <= in30) {
-        expiring[b.product_id] = (expiring[b.product_id] || 0) + 1
-      }
-    }
+  async function deleteRow(formData: FormData) {
+    'use server'
+    const id = String(formData.get('id') || '')
+    return await deleteProductAction(tenantId, id)
   }
 
   return (
-    <div className="p-6">
-      <div className="mb-6">
-        <ImportCsvClient tenantId={tenantId} importAction={importProductsCsv} />
-      </div>
-      <form className="mb-3 flex gap-2 items-center" action={`/tenant/${tenantId}/products`}>
-        <input type="text" name="q" defaultValue={q ?? ''} placeholder="Recherche sku, nom, marque" className="border rounded p-2 w-64" />
-        <input type="hidden" name="pageSize" value={String(pageSize)} />
-        <button className="bg-gray-800 text-white rounded px-3 py-2">Rechercher</button>
-      </form>
-      <ProductsClient
-        tenantId={tenantId}
-        initialProducts={(products || []).map(p => ({
-          ...p,
-          stock_total: totals[p.id] || 0,
-          expiring_count: expiring[p.id] || 0,
-        }))}
-        createAction={createProduct}
-        updateAction={updateProduct}
-        archiveAction={archiveProduct}
-      />
-      <div className="mt-4 flex items-center justify-between text-sm text-gray-700">
+    <div className="p-6 space-y-4">
+      <form className="flex flex-wrap gap-3 items-end" action={`/tenant/${tenantId}/products`}>
         <div>
-          {count !== null && count !== undefined && (
-            (() => { const start = from + 1; const end = Math.min(to + 1, count!); return (<span>{start}–{end} sur {count}</span>) })()
-          )}
+          <label className="block text-sm">Rechercher</label>
+          <input type="text" name="q" defaultValue={q ?? ''} placeholder="SKU, nom, marque, catégorie" className="border rounded p-2 w-64" />
         </div>
-        <div className="flex gap-2">
-          {page > 1 && <a className="px-3 py-1 border rounded" href={`?${new URLSearchParams({ q: q ?? '', page: String(page - 1), pageSize: String(pageSize) }).toString()}`}>Précédent</a>}
-          {count && to + 1 < count && <a className="px-3 py-1 border rounded" href={`?${new URLSearchParams({ q: q ?? '', page: String(page + 1), pageSize: String(pageSize) }).toString()}`}>Suivant</a>}
+        <div>
+          <label className="block text-sm">Catégorie</label>
+          <input type="text" name="cat" defaultValue={cat ?? ''} placeholder="ex: shampoings" className="border rounded p-2 w-48" />
         </div>
-      </div>
+        <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="under" value="true" defaultChecked={under} /> Sous seuil</label>
+        <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="exp30" value="true" defaultChecked={exp30} /> Expirant ≤ 30j</label>
+        <input type="hidden" name="page" value="1" />
+        <input type="hidden" name="pageSize" value={String(pageSize)} />
+        <button className="bg-gray-900 text-white rounded px-3 py-2">Filtrer</button>
+      </form>
+      <TenantProductsTable rows={rows as any} total={total} page={page} pageSize={pageSize} updateAction={updateRow} deleteAction={deleteRow} />
     </div>
   )
 }

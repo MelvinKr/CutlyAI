@@ -31,7 +31,8 @@ export default function RootLayout({
             <a href="/" className="font-semibold tracking-tight">{appName}</a>
             <div className="flex gap-4 text-sm">
               <a href="/" className="hover:underline">Accueil</a>
-              <a href="/tenant/demo/products" className="hover:underline">Produits</a>
+              <a href="/products" className="hover:underline">Produits</a>
+              <a href="/tenant/demo/products" className="hover:underline">Produits (tenant demo)</a>
             </div>
           </nav>
         </header>
