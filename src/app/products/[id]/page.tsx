@@ -1,6 +1,6 @@
 import ProductForm from "@/components/products/ProductForm"
 import { createSupabaseServer } from "@/lib/supabase-server"
-import { updateProduct, deleteProduct } from "../actions"
+import { updateProductAction, deleteProductAction } from "../actions"
 
 export default async function ProductDetailPage({ params }: { params: { id: string } }) {
   const supabase = await createSupabaseServer()
@@ -11,7 +11,7 @@ export default async function ProductDetailPage({ params }: { params: { id: stri
 
   const { data: product } = await supabase
     .from('products')
-    .select('id, sku, name, brand, category, unit, unit_size, retail_price, cost_price, min_stock_threshold, is_active')
+    .select('id, tenant_id, sku, name, brand, category, unit, unit_size, retail_price, cost_price, min_stock_threshold, is_active')
     .eq('id', params.id)
     .maybeSingle()
 
@@ -19,12 +19,14 @@ export default async function ProductDetailPage({ params }: { params: { id: stri
 
   async function save(formData: FormData) {
     'use server'
-    return await updateProduct(params.id, formData)
+    const tenant = String(product?.tenant_id || 'demo')
+    return await updateProductAction(params.id, tenant, formData)
   }
 
   async function destroy() {
     'use server'
-    return await deleteProduct(params.id)
+    const tenant = String(product?.tenant_id || 'demo')
+    return await deleteProductAction(params.id, tenant)
   }
 
   return (
@@ -34,4 +36,3 @@ export default async function ProductDetailPage({ params }: { params: { id: stri
     </div>
   )
 }
-

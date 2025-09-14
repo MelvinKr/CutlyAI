@@ -1,5 +1,5 @@
 import { createSupabaseServer } from "@/lib/supabase-server"
-import { bulkUpsertProductsFromCsv, searchProducts } from "./actions"
+import { bulkUpsertProductsFromCsv, searchProductsAction, updateProductAction, deleteProductAction } from "./actions"
 import ProductsTable from "@/components/products/ProductsTable"
 import SearchBar from "@/components/products/SearchBar"
 import CsvImportDialog from "@/components/products/CsvImportDialog"
@@ -20,6 +20,7 @@ export default async function ProductsPage({ searchParams }: { searchParams: Rec
     )
   }
 
+  const tenant = typeof searchParams?.tenant === 'string' ? searchParams.tenant : 'demo'
   const page = Number(searchParams?.page || 1) || 1
   const pageSize = Number(searchParams?.pageSize || 20) || 20
   const q = typeof searchParams?.q === 'string' ? searchParams.q : undefined
@@ -28,11 +29,21 @@ export default async function ProductsPage({ searchParams }: { searchParams: Rec
   const underThreshold = String(searchParams?.underThreshold || '') === 'true'
   const expiringSoon = String(searchParams?.expiringSoon || '') === 'true'
 
-  const { rows, total } = await searchProducts({ q, category, activeOnly, underThreshold, expiringSoon, page, pageSize })
+  const { rows, total } = await searchProductsAction(tenant, { q, cat: category, under: underThreshold, exp30: expiringSoon, page, pageSize })
 
   async function importCsv(rows: any[]) {
     'use server'
     return await bulkUpsertProductsFromCsv(rows)
+  }
+
+  async function updateRow(id: string, formData: FormData) {
+    'use server'
+    return await updateProductAction(id, tenant, formData)
+  }
+
+  async function deleteRow(id: string) {
+    'use server'
+    return await deleteProductAction(id, tenant)
   }
 
   return (
@@ -46,4 +57,3 @@ export default async function ProductsPage({ searchParams }: { searchParams: Rec
     </div>
   )
 }
-
