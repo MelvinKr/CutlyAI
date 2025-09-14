@@ -106,7 +106,7 @@ export default function BatchesClient({ tenantId, productId, initialBatches, ini
               <input type="number" step="0.01" name="unit_cost" className="w-full border rounded p-2" />
             </div>
           </div>
-          <button formAction={createBatchAndInMovement as any} className="mt-3 bg-black text-white rounded px-4 py-2">Valider IN</button>
+          <button formAction={receiveStock as any} className="mt-3 bg-black text-white rounded px-4 py-2">Valider IN</button>
         </form>
 
         <form action={"/api/placeholder"} className="border rounded p-4">
@@ -131,7 +131,7 @@ export default function BatchesClient({ tenantId, productId, initialBatches, ini
               </select>
             </div>
           </div>
-          <button formAction={adjustBatch as any} className="mt-3 bg-blue-600 text-white rounded px-4 py-2">Ajuster</button>
+          <button formAction={adjustStock as any} className="mt-3 bg-blue-600 text-white rounded px-4 py-2">Ajuster</button>
         </form>
       </div>
 
@@ -176,5 +176,5 @@ export default function BatchesClient({ tenantId, productId, initialBatches, ini
 }
 
 // Import server actions with explicit type to use as formAction
-import { createBatchAndInMovement, adjustBatch } from "./actions"
+import { receiveStock, adjustStock } from "./actions"
 

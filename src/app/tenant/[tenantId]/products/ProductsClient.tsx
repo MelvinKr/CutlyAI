@@ -99,9 +99,26 @@ export default function ProductsClient({
 }
 
 function CreateForm({ tenantId, action, isPending, startTransition }: { tenantId: string; action: Props["createAction"]; isPending: boolean; startTransition: React.TransitionStartFunction }) {
+  const [msg, setMsg] = useState<string | null>(null)
+  const [skuError, setSkuError] = useState<string | null>(null)
   return (
     <form
-      action={(fd) => startTransition(() => action(fd))}
+      onSubmit={async (e) => {
+        e.preventDefault()
+        setMsg(null)
+        setSkuError(null)
+        const fd = new FormData(e.currentTarget as HTMLFormElement)
+        await startTransition(async () => {
+          const res = await action(fd)
+          if ((res as any)?.error) {
+            if (String((res as any).error).toLowerCase().includes('sku')) setSkuError(String((res as any).error))
+          } else {
+            ;(e.currentTarget as HTMLFormElement).reset()
+            setMsg('Produit créé ✅')
+            setTimeout(() => setMsg(null), 3000)
+          }
+        })
+      }}
       className="grid gap-2 grid-cols-1 md:grid-cols-6 items-end border rounded p-3"
     >
       <input type="hidden" name="tenantId" value={tenantId} />
@@ -112,6 +129,7 @@ function CreateForm({ tenantId, action, isPending, startTransition }: { tenantId
       <div>
         <label className="block text-sm">SKU</label>
         <input name="sku" required className="w-full border rounded p-2" placeholder="SKU-001" />
+        {skuError && <div className="text-xs text-red-700 mt-1">{skuError}</div>}
       </div>
       <div>
         <label className="block text-sm">Catégorie</label>
@@ -128,6 +146,7 @@ function CreateForm({ tenantId, action, isPending, startTransition }: { tenantId
       <div className="md:col-span-1">
         <button disabled={isPending} className="w-full bg-black text-white rounded p-2">Créer</button>
       </div>
+      {msg && <div className="md:col-span-6 text-xs text-emerald-700">{msg}</div>}
     </form>
   )
 }
@@ -160,6 +179,10 @@ function EditRow({ product, tenantId, updateAction, archiveAction, isPending, st
         </div>
         <div>
           <input name="retail_price" type="number" step="0.01" defaultValue={product.retail_price ?? 0} className="w-full border rounded p-2" />
+        </div>
+        <div>
+          <div className="text-sm">Stock total</div>
+          <div className="font-medium">{product.stock_total ?? 0}</div>
         </div>
         <div>
           <select name="is_active" defaultValue={product.is_active ? "true" : "false"} className="w-full border rounded p-2">

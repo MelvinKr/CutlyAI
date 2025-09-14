@@ -134,3 +134,7 @@ export async function adjustBatch(formData: FormData) {
     return { ok: true }
   })
 }
+
+// Friendly aliases per spec
+export const receiveStock = createBatchAndInMovement
+export const adjustStock = adjustBatch

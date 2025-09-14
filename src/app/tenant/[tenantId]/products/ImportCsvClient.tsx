@@ -5,13 +5,23 @@ import Papa from "papaparse"
 
 type Row = Record<string, string>
 
-export default function ImportCsvClient({ tenantId, importAction }: { tenantId: string, importAction: (fd: FormData) => Promise<any> }) {
+type ImportReport = { created: number; updated: number; errors: { index: number; sku: string; message: string }[] }
+
+export default function ImportCsvClient(
+  { tenantId, importAction }: {
+    tenantId: string,
+    importAction: (fd: FormData) => Promise<ImportReport | { ok?: boolean; error?: string; details?: any }>
+  }
+) {
   const [rows, setRows] = useState<Row[]>([])
   const [preview, setPreview] = useState<Row[]>([])
   const [error, setError] = useState<string | null>(null)
+  const [report, setReport] = useState<ImportReport | null>(null)
+  const [isImporting, setIsImporting] = useState(false)
 
   const onFile = (file: File) => {
     setError(null)
+    setReport(null)
     Papa.parse<Row>(file, {
       header: true,
       skipEmptyLines: true,
@@ -24,10 +34,21 @@ export default function ImportCsvClient({ tenantId, importAction }: { tenantId: 
   }
 
   const onValidate = async () => {
-    const fd = new FormData()
-    fd.append("tenantId", tenantId)
-    fd.append("rows", JSON.stringify(rows))
-    await importAction(fd)
+    setIsImporting(true)
+    setReport(null)
+    try {
+      const fd = new FormData()
+      fd.append("tenantId", tenantId)
+      fd.append("rows", JSON.stringify(rows))
+      const res = await importAction(fd)
+      if ((res as any)?.error) {
+        setError((res as any).error)
+      } else {
+        setReport(res as ImportReport)
+      }
+    } finally {
+      setIsImporting(false)
+    }
   }
 
   return (
@@ -43,11 +64,54 @@ export default function ImportCsvClient({ tenantId, importAction }: { tenantId: 
       {preview.length > 0 && (
         <div className="text-sm">
           <div className="font-medium mb-1">Aperçu (10 premières lignes)</div>
-          <pre className="bg-gray-50 p-2 rounded overflow-auto max-h-64">{JSON.stringify(preview, null, 2)}</pre>
-          <button onClick={onValidate} className="mt-2 bg-emerald-600 text-white rounded px-4 py-2">Valider</button>
+          <div className="overflow-auto max-h-64 border rounded">
+            <table className="w-full text-xs">
+              <thead className="bg-gray-50">
+                <tr>
+                  {['sku','name','brand','category','unit','unit_size','retail_price','cost_price','min_stock_threshold'].map(h => (
+                    <th key={h} className="text-left px-2 py-1 border-b">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {preview.map((r, idx) => (
+                  <tr key={idx} className="odd:bg-white even:bg-gray-50">
+                    {['sku','name','brand','category','unit','unit_size','retail_price','cost_price','min_stock_threshold'].map(h => (
+                      <td key={h} className="px-2 py-1 border-b">{(r as any)[h] ?? ''}</td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <button disabled={isImporting} onClick={onValidate} className="mt-2 bg-emerald-600 text-white rounded px-4 py-2 disabled:opacity-50">{isImporting ? 'Import en cours…' : 'Importer'}</button>
+        </div>
+      )}
+      {report && (
+        <div className="text-sm">
+          <div className="font-medium mb-1">Rapport d'import</div>
+          <div className="mb-2">Créés: <span className="font-medium">{report.created}</span> · Mis à jour: <span className="font-medium">{report.updated}</span></div>
+          {report.errors.length > 0 && (
+            <div>
+              <div className="text-red-700 font-medium mb-1">Erreurs ({report.errors.length})</div>
+              <div className="overflow-auto max-h-64 border rounded">
+                <table className="w-full text-xs">
+                  <thead className="bg-gray-50"><tr><th className="px-2 py-1 border-b">Ligne</th><th className="px-2 py-1 border-b">SKU</th><th className="px-2 py-1 border-b">Message</th></tr></thead>
+                  <tbody>
+                    {report.errors.map((e, i) => (
+                      <tr key={i} className="odd:bg-white even:bg-gray-50">
+                        <td className="px-2 py-1 border-b">{e.index + 1}</td>
+                        <td className="px-2 py-1 border-b">{e.sku}</td>
+                        <td className="px-2 py-1 border-b">{e.message}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
   )
 }
-

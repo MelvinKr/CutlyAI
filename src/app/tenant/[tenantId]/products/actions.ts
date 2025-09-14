@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache"
 import { createSupabaseServer } from "@/lib/supabase-server"
 import { withTelemetry } from "@/lib/telemetry"
+import { z } from "zod"
 
 type Category = "shampoings" | "colorations" | "soins" | "accessoires"
 
@@ -119,35 +120,99 @@ export async function importProductsCsv(formData: FormData) {
   try { rows = JSON.parse(rowsStr) } catch { return { error: "CSV invalide" } }
 
   return withTelemetry("importProductsCsv", tenantId, async () => {
-    const normalized = rows.map(r => ({
-      tenant_id: tenantId,
-      sku: String(r.sku || "").trim(),
-      name: String(r.name || "").trim(),
-      brand: r.brand ?? null,
-      category: r.category ?? null,
-      unit: r.unit ?? "u",
-      unit_size: r.unit_size ? Number(r.unit_size) : null,
-      retail_price: r.retail_price ? Number(r.retail_price) : 0,
-      cost_price: r.cost_price ? Number(r.cost_price) : 0,
-      min_stock_threshold: r.min_stock_threshold ? Number(r.min_stock_threshold) : 0,
-      is_active: true,
-    })).filter(x => x.sku && x.name)
+    const schema = z.object({
+      sku: z.string().trim().min(1, "SKU requis"),
+      name: z.string().trim().min(1, "Nom requis"),
+      brand: z.string().trim().optional().nullable(),
+      category: z.string().trim().optional().nullable(),
+      unit: z.string().trim().default("u"),
+      unit_size: z.coerce.number().optional().nullable(),
+      retail_price: z.coerce.number().default(0),
+      cost_price: z.coerce.number().default(0),
+      min_stock_threshold: z.coerce.number().default(0),
+    })
 
-    const chunk = 100
+    // Validate rows and collect errors per line
+    const validRows: any[] = []
     const errors: { index: number; sku: string; message: string }[] = []
-    for (let i = 0; i < normalized.length; i += chunk) {
-      const part = normalized.slice(i, i + chunk)
-      const { error } = await supabase
-        .from("products")
-        .upsert(part, { onConflict: "tenant_id,sku" })
+    rows.forEach((r, idx) => {
+      const parsed = schema.safeParse(r)
+      if (!parsed.success) {
+        errors.push({ index: idx, sku: String(r?.sku ?? ''), message: parsed.error.issues.map(i => i.message).join(', ') })
+        return
+      }
+      const v = parsed.data
+      validRows.push({
+        tenant_id: tenantId,
+        sku: v.sku,
+        name: v.name,
+        brand: v.brand ?? null,
+        category: v.category ?? null,
+        unit: v.unit || 'u',
+        unit_size: v.unit_size ?? null,
+        retail_price: v.retail_price ?? 0,
+        cost_price: v.cost_price ?? 0,
+        min_stock_threshold: v.min_stock_threshold ?? 0,
+        is_active: true,
+      })
+    })
+
+    if (validRows.length === 0) {
+      return { created: 0, updated: 0, errors }
+    }
+
+    // Determine existing SKUs for this tenant
+    const skus = Array.from(new Set(validRows.map(r => r.sku)))
+    const { data: existing } = await supabase
+      .from('products')
+      .select('sku')
+      .eq('tenant_id', tenantId)
+      .in('sku', skus)
+    const existingSet = new Set((existing || []).map(r => r.sku))
+    const toInsert = validRows.filter(r => !existingSet.has(r.sku))
+    const toUpdate = validRows.filter(r => existingSet.has(r.sku))
+
+    const chunk = 50
+    let created = 0
+    let updated = 0
+    // Inserts
+    for (let i = 0; i < toInsert.length; i += chunk) {
+      const part = toInsert.slice(i, i + chunk)
+      const { error } = await supabase.from('products').insert(part)
       if (error) {
-        // Record generic error; detailed per-row errors need row-by-row processing
-        errors.push({ index: i, sku: part[0]?.sku ?? "?", message: error.message })
+        part.forEach((r, idx) => errors.push({ index: idx, sku: r.sku, message: error.message }))
+      } else {
+        created += part.length
+      }
+    }
+    // Updates (by sku)
+    for (let i = 0; i < toUpdate.length; i += chunk) {
+      const part = toUpdate.slice(i, i + chunk)
+      for (const r of part) {
+        const { error } = await supabase
+          .from('products')
+          .update({
+            name: r.name,
+            brand: r.brand,
+            category: r.category,
+            unit: r.unit,
+            unit_size: r.unit_size,
+            retail_price: r.retail_price,
+            cost_price: r.cost_price,
+            min_stock_threshold: r.min_stock_threshold,
+            is_active: r.is_active,
+          })
+          .eq('tenant_id', tenantId)
+          .eq('sku', r.sku)
+        if (error) {
+          errors.push({ index: 0, sku: r.sku, message: error.message })
+        } else {
+          updated += 1
+        }
       }
     }
 
     revalidatePath(`/tenant/${tenantId}/products`)
-    if (errors.length) return { error: `Erreurs lors de l'upsert: ${errors.length}` , details: errors }
-    return { ok: true }
+    return { created, updated, errors }
   })
 }
