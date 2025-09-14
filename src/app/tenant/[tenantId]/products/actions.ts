@@ -323,3 +323,50 @@ export async function deleteProductAction(tenant: string, id: string) {
   revalidatePath(`/tenant/${tenant}/products`)
   return { ok: true }
 }
+
+// Create product (tenant-aware)
+export async function createProductAction(tenant: string, formData: FormData) {
+  const supabase = await getSupabase()
+  const parsed = z.object({
+    sku: z.string().trim().min(2),
+    name: z.string().trim().min(2),
+    brand: z.string().trim().optional().nullable(),
+    category: z.string().trim().min(2),
+    unit: z.string().trim().default('unit'),
+    unit_size: z.coerce.number().optional().nullable().default(1),
+    retail_price: z.coerce.number().min(0).default(0),
+    cost_price: z.coerce.number().min(0).default(0),
+    min_stock_thresh: z.coerce.number().int().min(0).default(0),
+    tax_rate: z.coerce.number().min(0).max(0.3).default(0),
+    is_active: z.coerce.boolean().default(true),
+    expires_in_days: z.coerce.number().int().min(0).nullable().optional(),
+  }).safeParse(Object.fromEntries(formData.entries()))
+  if (!parsed.success) return { ok: false, message: parsed.error.issues.map(i => i.message).join(', ') }
+  const v = parsed.data
+  const payload: any = {
+    tenant_id: tenant,
+    sku: v.sku.trim().toUpperCase(),
+    name: v.name.trim(),
+    brand: v.brand ?? null,
+    category: v.category.trim(),
+    unit: v.unit || 'unit',
+    unit_size: v.unit_size ?? 1,
+    retail_price: v.retail_price ?? 0,
+    cost_price: v.cost_price ?? 0,
+    min_stock_threshold: v.min_stock_thresh ?? 0,
+    tax_rate: v.tax_rate ?? 0,
+    is_active: v.is_active ?? true,
+    expires_in_days: v.expires_in_days ?? null,
+  }
+
+  // Unique per tenant
+  const { data: exists, error: exErr } = await supabase
+    .from('products').select('id').eq('tenant_id', tenant).eq('sku', payload.sku).limit(1)
+  if (exErr) return { ok: false, message: exErr.message }
+  if (exists && exists.length) return { ok: false, message: 'SKU déjà utilisé pour ce tenant' }
+
+  const { data, error } = await supabase.from('products').insert(payload).select('id').single()
+  if (error) return { ok: false, message: error.message }
+  revalidatePath(`/tenant/${tenant}/products`)
+  return { ok: true, id: data?.id }
+}

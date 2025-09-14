@@ -1,6 +1,7 @@
 import { ensureDemoSeed } from "@/lib/demo-seed"
 import TenantProductsTable from "@/components/products/TenantProductsTable"
-import { searchProductsAction, updateProductAction, deleteProductAction } from "./actions"
+import CreateProductButton from "@/components/products/CreateProductButton"
+import { searchProductsAction, updateProductAction, deleteProductAction, createProductAction } from "./actions"
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.SUPABASE_URL
 const supabaseAnon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? process.env.SUPABASE_ANON_KEY
@@ -41,23 +42,31 @@ export default async function ProductsPage({ params, searchParams }: { params: {
     return await deleteProductAction(tenantId, id)
   }
 
+  async function createRow(formData: FormData) {
+    'use server'
+    return await createProductAction(tenantId, formData)
+  }
+
   return (
     <div className="p-6 space-y-4">
-      <form className="flex flex-wrap gap-3 items-end" action={`/tenant/${tenantId}/products`}>
-        <div>
-          <label className="block text-sm">Rechercher</label>
-          <input type="text" name="q" defaultValue={q ?? ''} placeholder="SKU, nom, marque, catégorie" className="border rounded p-2 w-64" />
-        </div>
-        <div>
-          <label className="block text-sm">Catégorie</label>
-          <input type="text" name="cat" defaultValue={cat ?? ''} placeholder="ex: shampoings" className="border rounded p-2 w-48" />
-        </div>
-        <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="under" value="true" defaultChecked={under} /> Sous seuil</label>
-        <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="exp30" value="true" defaultChecked={exp30} /> Expirant ≤ 30j</label>
-        <input type="hidden" name="page" value="1" />
-        <input type="hidden" name="pageSize" value={String(pageSize)} />
-        <button className="bg-gray-900 text-white rounded px-3 py-2">Filtrer</button>
-      </form>
+      <div className="flex items-end justify-between gap-3">
+        <form className="flex flex-wrap gap-3 items-end" action={`/tenant/${tenantId}/products`}>
+          <div>
+            <label className="block text-sm">Rechercher</label>
+            <input type="text" name="q" defaultValue={q ?? ''} placeholder="SKU, nom, marque, catégorie" className="border rounded p-2 w-64" />
+          </div>
+          <div>
+            <label className="block text-sm">Catégorie</label>
+            <input type="text" name="cat" defaultValue={cat ?? ''} placeholder="ex: shampoings" className="border rounded p-2 w-48" />
+          </div>
+          <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="under" value="true" defaultChecked={under} /> Sous seuil</label>
+          <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="exp30" value="true" defaultChecked={exp30} /> Expirant ≤ 30j</label>
+          <input type="hidden" name="page" value="1" />
+          <input type="hidden" name="pageSize" value={String(pageSize)} />
+          <button className="bg-gray-900 text-white rounded px-3 py-2">Filtrer</button>
+        </form>
+        <CreateProductButton tenantId={tenantId} createAction={createRow} />
+      </div>
       <TenantProductsTable rows={rows as any} total={total} page={page} pageSize={pageSize} updateAction={updateRow} deleteAction={deleteRow} />
     </div>
   )

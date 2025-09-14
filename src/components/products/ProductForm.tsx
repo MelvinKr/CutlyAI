@@ -7,9 +7,12 @@ type Props = {
   initial?: Partial<Record<string, any>>
   onSubmit: (formData: FormData) => Promise<any>
   onDelete?: () => Promise<any>
+  onSuccess?: () => void
+  onError?: (message: string) => void
+  onCancel?: () => void
 }
 
-export default function ProductForm({ mode, initial, onSubmit, onDelete }: Props) {
+export default function ProductForm({ mode, initial, onSubmit, onDelete, onSuccess, onError, onCancel }: Props) {
   const [msg, setMsg] = useState<string | null>(null)
   const [skuError, setSkuError] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
@@ -23,12 +26,15 @@ export default function ProductForm({ mode, initial, onSubmit, onDelete }: Props
         const fd = new FormData(e.currentTarget)
         startTransition(async () => {
           const res = await onSubmit(fd)
-          if (res?.error) {
-            if (String(res.error).toLowerCase().includes('sku')) setSkuError(res.error)
-          } else {
+          if (res?.ok) {
             if (mode === 'create') (e.currentTarget as HTMLFormElement).reset()
             setMsg(mode === 'create' ? 'Produit créé ✅' : 'Produit mis à jour ✅')
-            setTimeout(() => setMsg(null), 2500)
+            setTimeout(() => setMsg(null), 2000)
+            onSuccess?.()
+          } else if (res?.message || res?.error) {
+            const m = String(res.message || res.error)
+            if (m.toLowerCase().includes('sku')) setSkuError(m)
+            onError?.(m)
           }
         })
       }}
@@ -84,6 +90,9 @@ export default function ProductForm({ mode, initial, onSubmit, onDelete }: Props
       </div>
       <div className="md:col-span-3 flex items-center gap-3 mt-2">
         <button disabled={isPending} className="bg-black text-white rounded px-4 py-2">{mode === 'create' ? 'Créer' : 'Enregistrer'}</button>
+        {onCancel && (
+          <button type="button" onClick={onCancel} className="border rounded px-4 py-2">Annuler</button>
+        )}
         {onDelete && (
           <button type="button" onClick={() => startTransition(onDelete)} className="bg-red-600 text-white rounded px-4 py-2">Supprimer</button>
         )}
@@ -92,4 +101,3 @@ export default function ProductForm({ mode, initial, onSubmit, onDelete }: Props
     </form>
   )
 }
-
